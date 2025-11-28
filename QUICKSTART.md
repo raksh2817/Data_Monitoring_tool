@@ -38,9 +38,13 @@ database:
 
 ### 3. Create Database Schema
 
+The `db_fixed.sql` file contains the **complete database setup** (tables, alert types, and a test host):
+
 ```bash
 mysql -h your-mysql-host -u your-username -p your-database < scripts/db_fixed.sql
 ```
+
+This creates all tables, adds default alert types, and includes one test host (`test-host` with key `test-key-123`).
 
 ### 4. Start Server
 

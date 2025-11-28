@@ -476,6 +476,13 @@ CREATE DATABASE your_database_name CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode
 
 ### Step 2: Run Schema Script
 
+The `db_fixed.sql` file contains the **complete database setup**, including:
+- All table definitions
+- Alert type definitions
+- A test host (for initial testing)
+
+Run the script:
+
 ```bash
 mysql -h mysql.clarksonmsda.org -u your_username -p your_database_name < scripts/db_fixed.sql
 ```
@@ -488,27 +495,36 @@ mysql -h your_mysql_host -u your_username -p your_database_name < db_fixed.sql
 ```
 
 This creates all required tables:
-- `hosts` - Server registry
+- `hosts` - Server registry (includes one test host: `test-host` with key `test-key-123`)
 - `incoming_data` - Time-series metrics
-- `alert_types` - Alert check definitions
+- `alert_types` - Alert check definitions (includes 3 default alert types)
 - `alerts` - Alert instances
 - `host_alert_checks` - Per-host alert configuration
 
-### Step 3: Add Test Hosts (Optional)
+**Note:** The `db_fixed.sql` file is complete and ready to use. It includes:
+- ✅ All table schemas
+- ✅ Default alert types (Host Online, Disk Space, Memory Usage)
+- ✅ One test host for initial testing
 
-For testing, you can add sample hosts:
+### Step 3: Add Additional Test Hosts (Optional)
+
+If you want to add more test hosts for demonstration purposes:
 
 ```bash
 mysql -h your_mysql_host -u your_username -p your_database_name < scripts/demo/setup_test_hosts.sql
 ```
 
-### Step 4: Configure Alerts (Optional)
+This adds additional test hosts with different scenarios (high CPU, high memory, high disk).
 
-Set up alert associations:
+### Step 4: Configure Alert Associations (Optional)
+
+To set up alert associations for the test hosts:
 
 ```bash
 mysql -h your_mysql_host -u your_username -p your_database_name < scripts/demo/setup_alert_associations.sql
 ```
+
+This configures which alerts are enabled for which hosts with custom thresholds.
 
 ### Step 5: Verify Database
 
