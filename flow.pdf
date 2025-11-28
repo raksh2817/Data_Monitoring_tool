@@ -1,0 +1,354 @@
+================================================================================
+                    COMPLETE SYSTEM FLOW DIAGRAM
+================================================================================
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│                                                                            │
+│                     DATA MONITORING TOOL - PART 1                          │
+│                    Real-time Server Monitoring System                      │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+
+                                  ╔═══════╗
+                                  ║ START ║
+                                  ╚═══╤═══╝
+                                      │
+        ┌─────────────────────────────┼─────────────────────────────┐
+        │                             │                             │
+        ▼                             ▼                             ▼
+┌───────────────┐            ┌───────────────┐            ┌───────────────┐
+│ AGENT 1       │            │ AGENT 2       │            │ AGENT 3       │
+│ web-server-01 │            │ api-server-02 │            │ db-server-03  │
+├───────────────┤            ├───────────────┤            ├───────────────┤
+│ agent.py      │            │ agent.py      │            │ agent.py      │
+│ (Cron: */1)   │            │ (Cron: */1)   │            │ (Cron: */1)   │
+└───────┬───────┘            └───────┬───────┘            └───────┬───────┘
+        │                            │                            │
+        │ Collect Metrics:           │ Collect Metrics:           │ Collect:
+        │ • CPU: 25%                 │ • CPU: 89% (HIGH!)         │ • CPU: 20%
+        │ • Memory: 45%              │ • Memory: 55%              │ • Memory: 93% (HIGH!)
+        │ • Disk: 30%                │ • Disk: 40%                │ • Disk: 35%
+        │ • IP Address               │ • IP Address               │ • IP Address
+        │ • Kernel Info              │ • Kernel Info              │ • Kernel Info
+        │                            │                            │
+        └────────────┬───────────────┴────────────┬───────────────┘
+                     │                            │
+                     │  HTTP POST to Flask API    │
+                     │  with Authentication       │
+                     │                            │
+                     ▼                            ▼
+        ╔════════════════════════════════════════════════════╗
+        ║       POST /report                                 ║
+        ║       Authorization: Bearer <host_key>             ║
+        ║       Content-Type: application/json               ║
+        ║                                                    ║
+        ║       {                                            ║
+        ║         "cpu_pct": 25.5,                          ║
+        ║         "mem_pct": 45.2,                          ║
+        ║         "disk_pct": 30.1,                         ║
+        ║         "mem_used_mb": 7400,                      ║
+        ║         "mem_total_mb": 16384,                    ║
+        ║         "disk_used_gb": 150.5,                    ║
+        ║         "disk_total_gb": 500.0,                   ║
+        ║         "int_ip": "192.168.1.100",                ║
+        ║         "collected_at": "2025-11-25 16:30:00"     ║
+        ║       }                                            ║
+        ╚════════════════════════════════════════════════════╝
+                                │
+                                │
+                                ▼
+        ┌───────────────────────────────────────────────────┐
+        │         FLASK REST API SERVER (app.py)            │
+        │              Running on Port 5000                 │
+        │                                                   │
+        │  Endpoints:                                       │
+        │  • POST /report  - Receive metrics                │
+        │  • GET  /health  - Health check                   │
+        │  • GET  /        - Dashboard (Part 2)             │
+        └───────────────────────┬───────────────────────────┘
+                                │
+                                ▼
+                    ┌───────────────────────┐
+                    │  1. Extract host_key  │
+                    │     from Authorization│
+                    │     header            │
+                    └───────────┬───────────┘
+                                │
+                                ▼
+                    ┌───────────────────────┐
+                    │  2. Validate JSON     │
+                    │     payload with      │
+                    │     Pydantic          │
+                    └───────────┬───────────┘
+                                │
+                                ▼
+                       ╔════════════════╗
+                       ║ Valid host_key?║
+                       ╚════════╤═══════╝
+                                │
+                    ┌───────────┼───────────┐
+                    │ NO        │           │ YES
+                    ▼           │           ▼
+            ┌──────────────┐   │   ┌──────────────────┐
+            │ Return 403   │   │   │ Query Database:  │
+            │ Forbidden    │   │   │ SELECT host_id   │
+            │              │   │   │ FROM hosts       │
+            └──────────────┘   │   │ WHERE host_key=? │
+                    │          │   │ AND is_active=1  │
+                    │          │   └────────┬─────────┘
+                    │          │            │
+                    │          │            ▼
+                    │          │   ╔════════════════╗
+                    │          │   ║ Host found?    ║
+                    │          │   ╚════════╤═══════╝
+                    │          │            │
+                    │          │    ┌───────┼──────┐
+                    │          │    │ NO    │      │ YES
+                    │          │    ▼       │      ▼
+                    │          │ Return 403 │  ┌────────────────────┐
+                    │          │            │  │ INSERT INTO        │
+                    │          │            │  │ incoming_data:     │
+                    │          │            │  │ • host_id          │
+                    │          │            │  │ • cpu_pct          │
+                    │          │            │  │ • mem_pct          │
+                    │          │            │  │ • disk_pct         │
+                    │          │            │  │ • collected_at     │
+                    │          │            │  │ • created_at=NOW() │
+                    │          │            │  └──────────┬─────────┘
+                    │          │            │             │
+                    │          │            │             ▼
+                    │          │            │  ┌────────────────────┐
+                    │          │            │  │ UPDATE hosts       │
+                    │          │            │  │ SET last_seen=NOW()│
+                    │          │            │  │ WHERE host_id=?    │
+                    │          │            │  └──────────┬─────────┘
+                    │          │            │             │
+                    │          │            │             ▼
+                    │          │            │  ┌────────────────────┐
+                    │          │            │  │ Return 200 OK      │
+                    │          │            │  │ {                  │
+                    │          │            │  │   "ok": true,      │
+                    │          │            │  │   "data_id": 123   │
+                    │          │            │  │ }                  │
+                    │          │            │  └──────────┬─────────┘
+                    │          │            │             │
+                    └──────────┴────────────┴─────────────┘
+                                            │
+                                            │ Data now in database
+                                            │
+                                            ▼
+        ┌───────────────────────────────────────────────────────────┐
+        │              MYSQL DATABASE                               │
+        │          (mysql.clarksonmsda.org)                         │
+        │                                                           │
+        │  Tables:                                                  │
+        │  ┌─────────────────────────────────────────────────────┐ │
+        │  │ hosts                                               │ │
+        │  │ • host_id, host_name, host_key                      │ │
+        │  │ • os_name, os_version                               │ │
+        │  │ • is_active, last_seen, created_at                  │ │
+        │  └─────────────────────────────────────────────────────┘ │
+        │                                                           │
+        │  ┌─────────────────────────────────────────────────────┐ │
+        │  │ incoming_data (TIME SERIES)                         │ │
+        │  │ • data_id, host_id, collected_at                    │ │
+        │  │ • cpu_pct, mem_pct, disk_pct                        │ │
+        │  │ • mem_used_mb, mem_total_mb                         │ │
+        │  │ • disk_used_gb, disk_total_gb                       │ │
+        │  │ • int_ip, public_ip, kernel info                    │ │
+        │  └─────────────────────────────────────────────────────┘ │
+        │                                                           │
+        │  ┌─────────────────────────────────────────────────────┐ │
+        │  │ alert_types                                         │ │
+        │  │ • check_id, check_name, check_key                   │ │
+        │  │ • function_name (Python function)                   │ │
+        │  │ • params_json (default thresholds)                  │ │
+        │  │ • severity (L1, L2, L3)                             │ │
+        │  └─────────────────────────────────────────────────────┘ │
+        │                                                           │
+        │  ┌─────────────────────────────────────────────────────┐ │
+        │  │ host_alert_checks (ASSOCIATIONS)                    │ │
+        │  │ • host_id, check_id                                 │ │
+        │  │ • enabled (boolean)                                 │ │
+        │  │ • params_json (host-specific thresholds)            │ │
+        │  │                                                     │ │
+        │  │ Example:                                            │ │
+        │  │ storage-server: disk alert at 95%                   │ │
+        │  │ web-server: disk alert at 85%                       │ │
+        │  └─────────────────────────────────────────────────────┘ │
+        │                                                           │
+        │  ┌─────────────────────────────────────────────────────┐ │
+        │  │ alerts (ALERT HISTORY)                              │ │
+        │  │ • alert_id, host_id, check_id                       │ │
+        │  │ • severity, status (open/ack/resolved)              │ │
+        │  │ • message, triggered_at                             │ │
+        │  │ • last_notified_at, updated_at                      │ │
+        │  └─────────────────────────────────────────────────────┘ │
+        └───────────────────────────────────────────────────────────┘
+                                            │
+                                            │ Data stored, now check alerts
+                                            │
+                                            ▼
+        ┌───────────────────────────────────────────────────────────┐
+        │         ALERT CHECKER (check_alerts.py)                   │
+        │            Runs every 2-5 minutes (cron)                  │
+        │                                                           │
+        │  Cron: */2 * * * * python check_alerts.py                │
+        └───────────────────────┬───────────────────────────────────┘
+                                │
+                                ▼
+                    ┌───────────────────────┐
+                    │ 1. Get all active     │
+                    │    hosts from DB      │
+                    └───────────┬───────────┘
+                                │
+                                ▼
+                    ┌───────────────────────┐
+                    │ 2. For each host:     │
+                    │    Get enabled alert  │
+                    │    checks with custom │
+                    │    thresholds         │
+                    └───────────┬───────────┘
+                                │
+                                ▼
+              ╔═════════════════════════════════════╗
+              ║ FOR EACH HOST & ALERT CHECK:        ║
+              ╚═════════════════════════════════════╝
+                                │
+                                ▼
+                    ┌───────────────────────┐
+                    │ 3. Get latest metrics │
+                    │    from incoming_data │
+                    │    (CPU, mem, disk)   │
+                    └───────────┬───────────┘
+                                │
+                                ▼
+                    ┌───────────────────────┐
+                    │ 4. Run check function │
+                    │    Examples:          │
+                    │    • check_disk_space │
+                    │    • check_memory     │
+                    │    • check_host_online│
+                    └───────────┬───────────┘
+                                │
+                                ▼
+                    ┌───────────────────────┐
+                    │ 5. Compare metrics to │
+                    │    threshold:         │
+                    │    disk_pct >= 85%?   │
+                    └───────────┬───────────┘
+                                │
+                                ▼
+                       ╔════════════════╗
+                       ║ Alert triggered║
+                       ║ (threshold     ║
+                       ║  exceeded)?    ║
+                       ╚════════╤═══════╝
+                                │
+                    ┌───────────┼────────────┐
+                    │ NO        │            │ YES
+                    │           │            │
+                    ▼           │            ▼
+        ┌──────────────────┐   │   ┌──────────────────┐
+        │ current_state =  │   │   │ current_state =  │
+        │ "normal"         │   │   │ "alert"          │
+        └────────┬─────────┘   │   └────────┬─────────┘
+                 │              │            │
+                 └──────────────┴────────────┘
+                                │
+                                ▼
+                    ┌───────────────────────┐
+                    │ 6. Get previous alert │
+                    │    state from DB:     │
+                    │    SELECT status      │
+                    │    FROM alerts        │
+                    │    WHERE host & check │
+                    │    ORDER BY recent    │
+                    └───────────┬───────────┘
+                                │
+                                ▼
+                       ╔════════════════════╗
+                       ║ STATE CHANGE       ║
+                       ║ DETECTION          ║
+                       ║ (KEY INNOVATION!)  ║
+                       ╚════════╤═══════════╝
+                                │
+            ┌───────────────────┼───────────────────┐
+            │                   │                   │
+            ▼                   ▼                   ▼
+   ┌────────────────┐  ┌────────────────┐  ┌────────────────┐
+   │ CASE 1:        │  │ CASE 2:        │  │ CASE 3:        │
+   │ Normal → Alert │  │ Alert → Normal │  │ No Change      │
+   ├────────────────┤  ├────────────────┤  ├────────────────┤
+   │ Previous: OK   │  │ Previous: Alert│  │ Previous: Alert│
+   │ Current: Alert │  │ Current: OK    │  │ Current: Alert │
+   │                │  │                │  │                │
+   │ ACTION:        │  │ ACTION:        │  │ ACTION:        │
+   │ CREATE ALERT   │  │ RESOLVE ALERT  │  │ NOTHING        │
+   │                │  │                │  │ (No spam!)     │
+   │ INSERT INTO    │  │ UPDATE alerts  │  │                │
+   │ alerts:        │  │ SET status=    │  │ Prevents       │
+   │ • host_id      │  │ 'resolved'     │  │ duplicate      │
+   │ • check_id     │  │ • message      │  │ notifications  │
+   │ • severity     │  │ • updated_at   │  │                │
+   │ • status='open'│  │                │  │                │
+   │ • message      │  │ Console:       │  │ Console:       │
+   │ • triggered_at │  │ "✅ RESOLVED"  │  │ "⚠️ ONGOING"   │
+   │                │  │                │  │                │
+   │ Console:       │  │                │  │                │
+   │ "🚨 NEW ALERT" │  │                │  │                │
+   └────────────────┘  └────────────────┘  └────────────────┘
+            │                   │                   │
+            └───────────────────┴───────────────────┘
+                                │
+                                ▼
+                    ┌───────────────────────┐
+                    │ 7. Continue with next │
+                    │    alert check        │
+                    └───────────┬───────────┘
+                                │
+                                ▼
+                       ╔════════════════╗
+                       ║ More checks    ║
+                       ║ for this host? ║
+                       ╚════════╤═══════╝
+                                │
+                        ┌───────┼───────┐
+                        │ YES   │   NO  │
+                        │       │       │
+                        │       └───────┼────────┐
+                        │               │        │
+                        └───────────────┘        │
+                        Loop back to             │
+                        step 3                   │
+                                                 ▼
+                                    ┌────────────────────┐
+                                    │ Move to next host  │
+                                    └─────────┬──────────┘
+                                              │
+                                              ▼
+                                     ╔════════════════╗
+                                     ║ More hosts?    ║
+                                     ╚════════╤═══════╝
+                                              │
+                                      ┌───────┼───────┐
+                                      │ YES   │   NO  │
+                                      │       │       │
+                                      │       └───────┼─────┐
+                                      └───────────────┘     │
+                                      Loop back to          │
+                                      step 2                │
+                                                           ▼
+                                              ┌──────────────────────┐
+                                              │ Print Summary:       │
+                                              │ • Total hosts checked│
+                                              │ • New alerts: 2      │
+                                              │ • Resolved alerts: 1 │
+                                              │ • Ongoing alerts: 3  │
+                                              └──────────┬───────────┘
+                                                         │
+                                                         ▼
+                                                    ╔════════╗
+                                                    ║  END   ║
+                                                    ╚════════╝

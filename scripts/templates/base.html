@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {% if request.path == '/' or request.path == '/dashboard' %}
+    <meta http-equiv="refresh" content="30">
+    {% endif %}
+    <title>{% block title %}Monitoring Dashboard{% endblock %}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; color: #2c3e50; line-height: 1.6; }
+        nav { background: #2c3e50; color: white; padding: 1rem 2rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        nav h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+        nav ul { list-style: none; display: flex; gap: 2rem; }
+        nav a { color: #ecf0f1; text-decoration: none; padding: 0.5rem 1rem; border-radius: 4px; transition: background 0.3s; }
+        nav a:hover { background: #34495e; }
+        nav a.active { background: #3498db; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 2rem; }
+        .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+        .summary-card { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-left: 4px solid #3498db; }
+        .summary-card.success { border-left-color: #2ecc71; }
+        .summary-card.warning { border-left-color: #f39c12; }
+        .summary-card.danger { border-left-color: #e74c3c; }
+        .summary-card h3 { color: #7f8c8d; font-size: 0.9rem; margin-bottom: 0.5rem; text-transform: uppercase; }
+        .summary-card .value { font-size: 2.5rem; font-weight: bold; color: #2c3e50; }
+        .host-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.5rem; margin-top: 2rem; }
+        .host-card { background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: transform 0.2s, box-shadow 0.2s; }
+        .host-card:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.15); }
+        .host-card h3 { margin-bottom: 1rem; color: #2c3e50; display: flex; justify-content: space-between; align-items: center; }
+        .host-card a { color: #2c3e50; text-decoration: none; }
+        .host-card a:hover { color: #3498db; }
+        .status { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; }
+        .status.online { background: #d4edda; color: #155724; }
+        .status.warning { background: #fff3cd; color: #856404; }
+        .status.offline { background: #f8d7da; color: #721c24; }
+        .metric { margin: 0.5rem 0; }
+        .metric-label { display: flex; justify-content: space-between; margin-bottom: 0.25rem; font-size: 0.85rem; color: #7f8c8d; }
+        .metric-bar { height: 8px; background: #ecf0f1; border-radius: 4px; overflow: hidden; }
+        .metric-fill { height: 100%; transition: width 0.3s; }
+        .metric-fill.normal { background: #2ecc71; }
+        .metric-fill.warning { background: #f39c12; }
+        .metric-fill.danger { background: #e74c3c; }
+        .alert-badge { background: #e74c3c; color: white; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.75rem; font-weight: bold; }
+        .alert-badge.zero { background: #95a5a6; }
+        table { width: 100%; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        th { background: #34495e; color: white; padding: 1rem; text-align: left; font-weight: 600; }
+        td { padding: 1rem; border-bottom: 1px solid #ecf0f1; }
+        tr:hover { background: #f8f9fa; }
+        .severity { display: inline-block; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
+        .severity.L1 { background: #d6eaf8; color: #1f618d; }
+        .severity.L2 { background: #fdeaa7; color: #856404; }
+        .severity.L3 { background: #f8d7da; color: #721c24; }
+        .alert-status { display: inline-block; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
+        .alert-status.open { background: #f8d7da; color: #721c24; }
+        .alert-status.acknowledged { background: #fff3cd; color: #856404; }
+        .alert-status.resolved { background: #d4edda; color: #155724; }
+        .text-muted { color: #7f8c8d; font-size: 0.85rem; }
+        .text-center { text-align: center; }
+        .auto-refresh { background: #d6eaf8; padding: 0.75rem 1rem; border-radius: 4px; margin-bottom: 1rem; font-size: 0.85rem; color: #1f618d; }
+        .empty-state { text-align: center; padding: 3rem; color: #7f8c8d; background: white; border-radius: 8px; }
+        .empty-state h3 { margin-bottom: 0.5rem; color: #95a5a6; }
+        input:focus { border-color: #3498db !important; outline: none; }
+        button:hover, .btn:hover { background: #2980b9 !important; }
+        .btn-secondary:hover { background: #7f8c8d !important; }
+        .host-key-display { 
+            user-select: all; 
+            -webkit-user-select: all; 
+            -moz-user-select: all; 
+            -ms-user-select: all; 
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <h1>📊 Monitoring Dashboard</h1>
+        <ul>
+            <li><a href="/" class="{% if request.path == '/' or request.path == '/dashboard' %}active{% endif %}">Dashboard</a></li>
+            <li><a href="/add-host" class="{% if request.path == '/add-host' %}active{% endif %}">Add Host</a></li>
+            <li><a href="/alerts" class="{% if request.path == '/alerts' %}active{% endif %}">Alerts</a></li>
+        </ul>
+    </nav>
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>

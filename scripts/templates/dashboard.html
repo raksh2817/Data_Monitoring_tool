@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Monitoring System{% endblock %}
+{% block content %}
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+            <div style="background: {% if category == 'success' %}#d4edda{% else %}#f8d7da{% endif %}; color: {% if category == 'success' %}#155724{% else %}#721c24{% endif %}; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; border-left: 4px solid {% if category == 'success' %}#2ecc71{% else %}#e74c3c{% endif %};">
+                <strong>{% if category == 'success' %}✓{% else %}⚠️{% endif %}</strong> {{ message }}
+                {% if category == 'success' and 'Host Key:' in message %}
+                    <div style="margin-top: 0.75rem; padding: 0.75rem; background: rgba(255,255,255,0.5); border-radius: 4px;">
+                        <strong>Host Key:</strong>
+                        <code class="host-key-display" style="display: block; margin-top: 0.5rem; padding: 0.5rem; background: white; border: 1px solid #c3e6cb; border-radius: 4px; font-family: monospace; word-break: break-all; cursor: text;" title="Select and copy (Ctrl+C or Cmd+C)">
+                            {{ message.split('Host Key: ')[1] if 'Host Key: ' in message else '' }}
+                        </code>
+                        <small style="display: block; margin-top: 0.5rem; color: #155724;">Select the key above and copy it (Ctrl+C or Cmd+C)</small>
+                    </div>
+                {% endif %}
+            </div>
+        {% endfor %}
+    {% endif %}
+{% endwith %}
+<div class="auto-refresh">🔄 Auto-refresh enabled (every 30 seconds) | Last updated: {{ current_time.strftime('%Y-%m-%d %H:%M:%S') }}</div>
+
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+    <h2 style="margin: 0;">Hosts</h2>
+    <a href="/add-host" class="btn" style="padding: 0.75rem 1.5rem; background: #3498db; color: white; text-decoration: none; border-radius: 4px; font-weight: 600; transition: background 0.3s;">
+        ➕ Add Host
+    </a>
+</div>
+
+<div class="summary">
+    <div class="summary-card"><h3>Total Hosts</h3><div class="value">{{ total_hosts }}</div></div>
+    <div class="summary-card success"><h3>Online Hosts</h3><div class="value">{{ online_hosts }}</div></div>
+    <div class="summary-card {% if active_alerts > 0 %}danger{% else %}success{% endif %}"><h3>Active Alerts</h3><div class="value">{{ active_alerts }}</div></div>
+</div>
+
+{% if hosts %}
+<div class="host-grid">
+    {% for host in hosts %}
+    <div class="host-card">
+        <h3>
+            <a href="/host/{{ host.host_id }}">{{ host.host_name }}</a>
+            <span class="status {{ host.status }}">{% if host.status == 'online' %}🟢{% elif host.status == 'warning' %}🟡{% else %}🔴{% endif %} {{ host.status }}</span>
+        </h3>
+        <p class="text-muted" style="margin-bottom: 1rem;">{{ host.os_name }} {{ host.os_version }}<br>Last seen: {% if host.last_seen %}{{ host.last_seen.strftime('%H:%M:%S') }}{% else %}Never{% endif %}</p>
+        {% if host.cpu_pct is not none %}
+        <div class="metric">
+            <div class="metric-label"><span>CPU</span><span><strong>{{ "%.1f"|format(host.cpu_pct) }}%</strong></span></div>
+            <div class="metric-bar"><div class="metric-fill {% if host.cpu_pct < 70 %}normal{% elif host.cpu_pct < 90 %}warning{% else %}danger{% endif %}" style="width: {{ host.cpu_pct }}%"></div></div>
+        </div>
+        <div class="metric">
+            <div class="metric-label"><span>Memory</span><span><strong>{{ "%.1f"|format(host.mem_pct) }}%</strong></span></div>
+            <div class="metric-bar"><div class="metric-fill {% if host.mem_pct < 70 %}normal{% elif host.mem_pct < 90 %}warning{% else %}danger{% endif %}" style="width: {{ host.mem_pct }}%"></div></div>
+        </div>
+        <div class="metric">
+            <div class="metric-label"><span>Disk</span><span><strong>{{ "%.1f"|format(host.disk_pct) }}%</strong></span></div>
+            <div class="metric-bar"><div class="metric-fill {% if host.disk_pct < 70 %}normal{% elif host.disk_pct < 90 %}warning{% else %}danger{% endif %}" style="width: {{ host.disk_pct }}%"></div></div>
+        </div>
+        {% else %}
+        <p class="text-muted text-center" style="padding: 2rem 0;">No metrics available</p>
+        {% endif %}
+        <div style="margin-top: 1rem; text-align: center;">
+            <span class="alert-badge {% if host.alert_count == 0 %}zero{% endif %}">
+                {% if host.alert_count == 0 %}✓ No alerts{% elif host.alert_count == 1 %}⚠️ 1 alert{% else %}🚨 {{ host.alert_count }} alerts{% endif %}
+            </span>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+    <h3>No Hosts Found</h3>
+    <p>Get started by adding your first host to monitor</p>
+    <a href="/add-host" style="display: inline-block; margin-top: 1rem; padding: 0.75rem 2rem; background: #3498db; color: white; text-decoration: none; border-radius: 4px; font-weight: 600;">
+        ➕ Add Your First Host
+    </a>
+</div>
+{% endif %}
+{% endblock %}

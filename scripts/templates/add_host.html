@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Add Host - Monitoring System{% endblock %}
+{% block content %}
+<div style="margin-bottom: 2rem;">
+    <a href="/dashboard" style="color: #3498db; text-decoration: none;">← Back to Dashboard</a>
+</div>
+
+<h1 style="margin-bottom: 2rem;">Add New Host</h1>
+
+{% if errors %}
+<div style="background: #f8d7da; color: #721c24; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; border-left: 4px solid #e74c3c;">
+    <strong>⚠️ Please fix the following errors:</strong>
+    <ul style="margin: 0.5rem 0 0 1.5rem;">
+        {% for error in errors %}
+        <li>{{ error }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<div style="background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); max-width: 600px;">
+    <form method="POST" action="/add-host">
+        <div style="margin-bottom: 1.5rem;">
+            <label for="host_name" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #2c3e50;">
+                Host Name <span style="color: #e74c3c;">*</span>
+            </label>
+            <input 
+                type="text" 
+                id="host_name" 
+                name="host_name" 
+                value="{{ host_name or '' }}"
+                required 
+                maxlength="255"
+                style="width: 100%; padding: 0.75rem; border: 2px solid #ecf0f1; border-radius: 4px; font-size: 1rem; transition: border-color 0.3s;"
+                placeholder="e.g., web-server-01"
+            >
+            <small style="color: #7f8c8d; display: block; margin-top: 0.25rem;">
+                A unique name to identify this host
+            </small>
+        </div>
+
+
+        <div style="margin-bottom: 1.5rem;">
+            <label style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #2c3e50;">
+                Host Key <span style="color: #e74c3c;">*</span>
+            </label>
+            <div style="display: flex; gap: 1rem; align-items: flex-start;">
+                <div style="flex: 1;">
+                    <input 
+                        type="text" 
+                        id="host_key" 
+                        name="host_key" 
+                        value="{{ host_key or '' }}"
+                        maxlength="64"
+                        style="width: 100%; padding: 0.75rem; border: 2px solid #ecf0f1; border-radius: 4px; font-size: 1rem; font-family: monospace; transition: border-color 0.3s;"
+                        placeholder="Enter unique key or check Generate below"
+                    >
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                    <label style="display: flex; align-items: center; cursor: pointer; white-space: nowrap; padding: 0.5rem;">
+                        <input 
+                            type="checkbox" 
+                            id="generate_key" 
+                            name="generate_key"
+                            style="margin-right: 0.5rem;"
+                        >
+                        <span style="font-size: 0.9rem;">Generate</span>
+                    </label>
+                </div>
+            </div>
+            <small style="color: #7f8c8d; display: block; margin-top: 0.25rem;">
+                Unique authentication key for this host. If you check "Generate", leave the field above empty and a key will be created automatically. Otherwise, enter your own unique key. Must match the key in agent_config.json
+            </small>
+        </div>
+
+        <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+            <button 
+                type="submit" 
+                class="btn"
+                style="flex: 1; padding: 0.75rem 2rem; background: #3498db; color: white; border: none; border-radius: 4px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background 0.3s;"
+            >
+                Add Host
+            </button>
+            <a 
+                href="/dashboard" 
+                class="btn-secondary"
+                style="padding: 0.75rem 2rem; background: #95a5a6; color: white; border: none; border-radius: 4px; font-size: 1rem; font-weight: 600; text-decoration: none; display: inline-block; transition: background 0.3s;"
+            >
+                Cancel
+            </a>
+        </div>
+    </form>
+</div>
+
+<div style="background: #d6eaf8; padding: 1.5rem; border-radius: 8px; margin-top: 2rem; border-left: 4px solid #3498db;">
+    <h3 style="margin-bottom: 1rem; color: #1f618d;">📋 Instructions</h3>
+    <ol style="margin-left: 1.5rem; color: #2c3e50; line-height: 1.8;">
+        <li><strong>Host Name:</strong> Choose a unique, descriptive name (e.g., "web-server-01")</li>
+        <li><strong>Host Key:</strong> 
+            <ul style="margin-top: 0.5rem; margin-left: 1.5rem;">
+                <li>Option 1: Check "Generate" and leave the key field empty - a secure random key will be created</li>
+                <li>Option 2: Enter your own unique key (must be unique and not already in use)</li>
+            </ul>
+        </li>
+        <li><strong>After adding:</strong> The host key will be displayed on the dashboard. Select and copy it (Ctrl+C or Cmd+C) to use in the agent's <code>agent_config.json</code> file</li>
+    </ol>
+</div>
+{% endblock %}
+

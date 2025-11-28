@@ -1,0 +1,5 @@
+{
+  "api_url": "http://192.168.1.35:5000/report",
+  "host_key": "test-key-123",
+  "report_interval_seconds": 60
+}

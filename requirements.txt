@@ -1,0 +1,7 @@
+flask==3.0.0
+pymysql==1.1.0
+pydantic==2.5.0
+pyyaml==6.0.1
+psutil==5.9.6
+requests==2.31.0
+werkzeug==3.0.1

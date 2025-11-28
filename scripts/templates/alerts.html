@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Alerts - Monitoring System{% endblock %}
+{% block content %}
+<div class="auto-refresh">🔄 Auto-refresh enabled (every 30 seconds) | Last updated: {{ current_time.strftime('%Y-%m-%d %H:%M:%S') }}</div>
+
+<div class="summary">
+    <div class="summary-card danger"><h3>Open Alerts</h3><div class="value">{{ stats.get('open', 0) }}</div></div>
+    <div class="summary-card warning"><h3>Acknowledged</h3><div class="value">{{ stats.get('acknowledged', 0) }}</div></div>
+    <div class="summary-card success"><h3>Resolved</h3><div class="value">{{ stats.get('resolved', 0) }}</div></div>
+</div>
+
+<h2 style="margin-bottom: 1rem;">Alert History</h2>
+
+{% if alerts %}
+<table>
+    <thead>
+        <tr><th>Status</th><th>Severity</th><th>Host</th><th>Alert Type</th><th>Message</th><th>Time</th></tr>
+    </thead>
+    <tbody>
+        {% for alert in alerts %}
+        <tr>
+            <td><span class="alert-status {{ alert.status }}">{% if alert.status == 'open' %}🚨 Open{% elif alert.status == 'acknowledged' %}⚠️ Acknowledged{% else %}✅ Resolved{% endif %}</span></td>
+            <td><span class="severity {{ alert.severity }}">{{ alert.severity }}</span></td>
+            <td><a href="/host/{{ alert.host_id }}" style="color: #3498db; text-decoration: none;">{{ alert.host_name }}</a></td>
+            <td>{{ alert.check_name }}</td>
+            <td style="max-width: 400px;">{{ alert.message }}</td>
+            <td class="text-muted">{% if alert.minutes_ago < 60 %}{{ alert.minutes_ago }}m ago{% elif alert.minutes_ago < 1440 %}{{ (alert.minutes_ago / 60)|int }}h ago{% else %}{{ (alert.minutes_ago / 1440)|int }}d ago{% endif %}<br><small>{{ alert.triggered_at.strftime('%Y-%m-%d %H:%M') }}</small></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="empty-state"><h3>No Alerts Yet</h3><p>All systems are running smoothly! 🎉</p><p class="text-muted">Alerts will appear here when thresholds are exceeded</p></div>
+{% endif %}
+
+<div style="margin-top: 2rem; text-align: center; color: #7f8c8d;">
+    <p>Showing last 100 alerts | <a href="/dashboard" style="color: #3498db;">Back to Dashboard</a></p>
+</div>
+{% endblock %}
