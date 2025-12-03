@@ -1,2 +1,30 @@
+# Configuration files with sensitive data
 /config.yaml
 /config.yml
+scripts/config.yaml
+scripts/agent_config.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
