@@ -1,5 +1,5 @@
 {
-  "api_url": "http://YOUR_FLASK_SERVER_IP:5000/report",
+  "api_url": "http://YOUR_FLASK_SERVER_IP:5005/report",
   "host_key": "test-key-123",
   "report_interval_seconds": 60
 }

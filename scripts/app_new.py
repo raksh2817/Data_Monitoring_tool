@@ -81,6 +81,8 @@ DB_CFG = dict(
 AUTH_HEADER = config["auth"]["header"]
 AUTH_PREFIX = config["auth"]["prefix"]
 
+#USE PYTHON THREADING LIB , 1 THREAD , CALL CHECK ALERTS , 
+
 # Flask initialization
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)  # For flash messages
@@ -471,7 +473,7 @@ if __name__ == '__main__':
     import sys
     
     host = config["flask"].get("host", "0.0.0.0")
-    port = int(config["flask"].get("port", 5000))
+    port = int(config["flask"].get("port", 5005))
     debug = bool(config["flask"].get("debug", False))
     
     print("\nSystem Information:")
