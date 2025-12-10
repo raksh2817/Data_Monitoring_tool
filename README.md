@@ -70,10 +70,10 @@ The system monitors:
                     │
                     ▼
 ┌─────────────────────────────────────────────┐
-│      Alert Checker (check_alerts.py)        │
+│   Alert Checker Daemon (in app_new.py)      │
 │                                             │
-│  • Runs periodically (cron)                 │
-│  • Checks thresholds                        │
+│  • Runs as background thread                │
+│  • Checks thresholds periodically           │
 │  • State-change detection                   │
 │  • Creates/resolves alerts                  │
 └─────────────────────────────────────────────┘
@@ -85,21 +85,23 @@ The system monitors:
 2. **Agent** sends HTTP POST request to Flask API with Bearer token authentication
 3. **Flask API** validates the request and authenticates using host_key
 4. **Flask API** stores metrics in MySQL `incoming_data` table
-5. **Web Dashboard** queries database and displays real-time metrics
-6. **Alert Checker** runs periodically to check thresholds and trigger alerts
+5. **Web Dashboard** (requires login) queries database and displays real-time metrics
+6. **Alert Checker Daemon** runs as a background thread to check thresholds and trigger alerts automatically
 
 ---
 
 ## ✨ Features
 
 - ✅ **REST API Architecture** - Clean separation of concerns
-- ✅ **Secure Authentication** - Unique host keys for each monitored server
+- ✅ **Secure Authentication** - Unique host keys for API access, username/password for dashboard
+- ✅ **Login System** - User authentication for web dashboard access
 - ✅ **Time-Series Data Storage** - Efficient MySQL schema for metrics
 - ✅ **Real-Time Web Dashboard** - Auto-refreshing dashboard with visual metrics
-- ✅ **Automated Alerting** - State-change detection prevents alert spam
+- ✅ **Automated Alerting** - Background daemon thread with state-change detection
 - ✅ **Configurable Thresholds** - Per-host alert configuration
 - ✅ **Multiple Alert Types** - Disk space, memory usage, CPU usage, host online
 - ✅ **Alert Resolution Tracking** - Knows when problems are fixed
+- ✅ **Easy Setup** - Automated database setup and user creation scripts
 - ✅ **Production-Ready** - Error handling, logging, and validation
 
 ---
@@ -122,7 +124,7 @@ The system monitors:
 ### Network Requirements
 
 - Network connectivity between client hosts and server
-- Server must be accessible on configured port (default: 5000)
+- Server must be accessible on configured port (default: 5005)
 - MySQL database must be accessible from server
 
 ---
@@ -141,9 +143,12 @@ Data_Monitoring_tool/
 │   ├── agent.py                      # Monitoring agent (CLIENT)
 │   ├── config.yaml                   # Server configuration
 │   ├── requirements.txt              # Python dependencies
+│   ├── setup_database.py             # Database setup script
+│   ├── setup_user.py                 # User creation script
 │   │
 │   ├── templates/                     # Flask HTML templates
 │   │   ├── base.html                 # Base template
+│   │   ├── login.html                # Login page
 │   │   ├── dashboard.html            # Main dashboard
 │   │   ├── alerts.html               # Alerts page
 │   │   └── host_details.html         # Host detail page
@@ -154,7 +159,7 @@ Data_Monitoring_tool/
 │   │
 │   ├── demo/                         # Demo and testing scripts
 │   │   ├── test_monitoring.py        # Test data generator
-│   │   ├── check_alerts.py           # Alert checker script
+│   │   ├── demo_alerts.py            # Alert demonstration script
 │   │   ├── demo_alerts.py            # Alert demo script
 │   │   ├── setup_test_hosts.sql      # Test host setup
 │   │   ├── setup_alert_associations.sql  # Alert config setup
@@ -263,19 +268,19 @@ python app_new.py
 
 You should see output like:
 ```
-Starting Flask server on 0.0.0.0:5000
+Starting Flask server on 0.0.0.0:5005
 
 Server will be accessible at:
-  http://localhost:5000
-  http://127.0.0.1:5000
-  http://<your-ip>:5000
+  http://localhost:5005
+  http://127.0.0.1:5005
+  http://<your-ip>:5005
 ```
 
 ### Step 6: Access the Dashboard
 
 Open your browser and navigate to:
-- `http://localhost:5000` or
-- `http://<server-ip>:5000`
+- `http://localhost:5005` or
+- `http://<server-ip>:5005`
 
 You should see the monitoring dashboard.
 
@@ -353,7 +358,7 @@ Edit `agent_config.json`:
 
 ```json
 {
-  "api_url": "http://192.168.1.35:5000/report",
+  "api_url": "http://192.168.1.35:5005/report",
   "host_key": "your-unique-host-key-here",
   "report_interval_seconds": 60
 }
@@ -391,7 +396,7 @@ You should see output like:
 ============================================================
 Monitoring Agent Starting
 ============================================================
-API URL: http://192.168.1.35:5000/report
+API URL: http://192.168.1.35:5005/report
 Host Key: your-key... (masked)
 Config File: scripts/agent_config.json
 
@@ -405,7 +410,7 @@ Memory: 4096/16384 MB (25.0%)
 Disk: 125.5/500.0 GB (25.1%)
 ============================================================
 
-Sending to: http://192.168.1.35:5000/report
+Sending to: http://192.168.1.35:5005/report
 ✓ Success! Data ID: 12345
 
 ✓ Agent run completed successfully
@@ -474,20 +479,25 @@ Connect to MySQL and create the database:
 CREATE DATABASE your_database_name CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
-### Step 2: Run Schema Script
+### Step 2: Run Database Setup
 
-The `db_fixed.sql` file contains the **complete database setup**, including:
-- All table definitions
-- Alert type definitions
-- A test host (for initial testing)
+**Option 1: Using Python Setup Script (Recommended)**
 
-Run the script:
+The `setup_database.py` script provides the easiest way to set up the database:
 
 ```bash
-mysql -h mysql.clarksonmsda.org -u your_username -p your_database_name < scripts/db_fixed.sql
+cd scripts
+python setup_database.py
 ```
 
-Or manually:
+This automatically:
+- Creates all required tables (hosts, incoming_data, alert_types, alerts, host_alert_checks, users)
+- Inserts default alert types if they don't exist
+- Provides a summary of what was created
+
+**Option 2: Using SQL Script**
+
+Alternatively, you can use the SQL script directly:
 
 ```bash
 cd scripts
@@ -497,16 +507,24 @@ mysql -h your_mysql_host -u your_username -p your_database_name < db_fixed.sql
 This creates all required tables:
 - `hosts` - Server registry (includes one test host: `test-host` with key `test-key-123`)
 - `incoming_data` - Time-series metrics
-- `alert_types` - Alert check definitions (includes 3 default alert types)
+- `alert_types` - Alert check definitions (includes default alert types)
 - `alerts` - Alert instances
 - `host_alert_checks` - Per-host alert configuration
 
-**Note:** The `db_fixed.sql` file is complete and ready to use. It includes:
-- ✅ All table schemas
-- ✅ Default alert types (Host Online, Disk Space, Memory Usage)
-- ✅ One test host for initial testing
+**Note:** The `users` table is created automatically by `setup_database.py`. If using SQL script only, you'll need to create it separately or run `setup_database.py` afterwards.
 
-### Step 3: Add Additional Test Hosts (Optional)
+### Step 3: Create User Account
+
+Create your first login account for the dashboard:
+
+```bash
+cd scripts
+python setup_user.py admin your_password
+```
+
+Replace `admin` and `your_password` with your desired username and password.
+
+### Step 4: Add Additional Test Hosts (Optional)
 
 If you want to add more test hosts for demonstration purposes:
 
@@ -516,7 +534,7 @@ mysql -h your_mysql_host -u your_username -p your_database_name < scripts/demo/s
 
 This adds additional test hosts with different scenarios (high CPU, high memory, high disk).
 
-### Step 4: Configure Alert Associations (Optional)
+### Step 5: Configure Alert Associations (Optional)
 
 To set up alert associations for the test hosts:
 
@@ -526,7 +544,7 @@ mysql -h your_mysql_host -u your_username -p your_database_name < scripts/demo/s
 
 This configures which alerts are enabled for which hosts with custom thresholds.
 
-### Step 5: Verify Database
+### Step 6: Verify Database
 
 Connect to MySQL and verify:
 
@@ -564,15 +582,18 @@ auth:
 
 flask:
   host: "0.0.0.0"                      # Bind to all interfaces (use 127.0.0.1 for localhost only)
-  port: 5000                            # Server port
+  port: 5005                            # Server port (default: 5005)
   debug: true                          # Debug mode (set false in production)
+
+alerts:
+  check_interval_seconds: 60           # How often to check for alerts (in seconds)
 ```
 
 ### Agent Configuration (`scripts/agent_config.json`)
 
 ```json
 {
-  "api_url": "http://192.168.1.35:5000/report",
+  "api_url": "http://192.168.1.35:5005/report",
   "host_key": "unique-host-key-123",
   "report_interval_seconds": 60
 }
@@ -611,19 +632,18 @@ python agent.py
 **Automated (cron/scheduler):**
 See [Client-Side Setup - Step 5](#step-5-run-agent-automatically)
 
-### Run Alert Checker (Optional)
+### Alert Checker (Automatic)
 
-The alert checker runs periodically to check thresholds:
+The alert checker is now integrated into the Flask application and runs automatically as a background thread. When you start `app_new.py`, the alert checker daemon starts automatically.
 
-```bash
-cd scripts/demo
-python check_alerts.py
+The check interval can be configured in `config.yaml`:
+
+```yaml
+alerts:
+  check_interval_seconds: 60  # How often to check for alerts (in seconds)
 ```
 
-**Set up as cron job (every 2 minutes):**
-```bash
-*/2 * * * * /usr/bin/python3 /path/to/scripts/demo/check_alerts.py
-```
+**No separate script or cron job needed!** The alert checking runs continuously in the background.
 
 ---
 
@@ -631,18 +651,26 @@ python check_alerts.py
 
 ### Web Dashboard
 
-Access the dashboard at `http://<server-ip>:5000`
+Access the dashboard at `http://<server-ip>:5005` (or your configured port)
+
+**Login Required:**
+- You'll be redirected to the login page
+- Use credentials created with `setup_user.py`
 
 **Pages:**
+- **Login** (`/login`) - User authentication page
 - **Dashboard** (`/` or `/dashboard`) - Overview of all hosts with metrics
 - **Alerts** (`/alerts`) - List of all alerts (open, acknowledged, resolved)
 - **Host Details** (`/host/<id>`) - Detailed view of a specific host
+- **Add Host** (`/add-host`) - Add a new host to monitor
 
 **Features:**
+- User authentication with session management
 - Auto-refreshes every 30 seconds
 - Color-coded metrics (green/yellow/red)
 - Status indicators (online/warning/offline)
 - Alert badges on host cards
+- Logout functionality
 
 ### API Endpoints
 
@@ -750,7 +778,7 @@ Health check endpoint.
 
 **Solutions:**
 - Verify `api_url` in `agent_config.json` is correct
-- Check server is running: `curl http://server-ip:5000/health`
+- Check server is running: `curl http://server-ip:5005/health`
 - Check network connectivity: `ping server-ip`
 - Check firewall rules on both client and server
 
@@ -783,6 +811,14 @@ Health check endpoint.
 - Check `incoming_data` table: `SELECT * FROM incoming_data ORDER BY collected_at DESC LIMIT 10;`
 - Verify host_id matches: `SELECT * FROM hosts;`
 - Check Flask server logs for errors
+- Make sure you're logged in (dashboard requires authentication)
+
+**Problem: Cannot access dashboard / login page not working**
+
+**Solutions:**
+- Create a user account: `python setup_user.py admin password`
+- Verify users table exists: `SELECT * FROM users;`
+- Check that setup_database.py was run successfully
 
 ### General Issues
 
@@ -805,6 +841,7 @@ This will check:
 
 ### Authentication
 
+**API Endpoints** (for monitoring agents):
 All API requests use Bearer token authentication via the `Authorization` header:
 
 ```
@@ -812,6 +849,9 @@ Authorization: Bearer <host_key>
 ```
 
 The `host_key` must exist in the `hosts` table and the host must be active (`is_active=1`).
+
+**Web Dashboard**:
+The web dashboard requires user login. Create user accounts using `setup_user.py`. All dashboard routes are protected with session-based authentication.
 
 ### Endpoints
 

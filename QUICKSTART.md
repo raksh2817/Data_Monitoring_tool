@@ -118,18 +118,22 @@ You should see: `✓ Success! Data ID: <number>`
 
 ## Verify Everything Works
 
-1. **Check Dashboard**: Open `http://YOUR-SERVER-IP:5000` in browser
+1. **Check Dashboard**: Open `http://YOUR-SERVER-IP:5005` (or your configured port) in browser
+   - You'll be redirected to the login page
+   - Log in with the credentials you created using `setup_user.py`
 2. **Check Database**: 
    ```sql
    SELECT * FROM incoming_data ORDER BY collected_at DESC LIMIT 5;
    ```
 3. **Check Agent**: Run `python agent.py` and verify success message
+4. **Check Alerts**: The alert checker daemon runs automatically in the background when the Flask server starts
 
 ## Next Steps
 
 - Set up automatic agent runs (cron/Task Scheduler)
 - Configure alerts (see `scripts/demo/setup_alert_associations.sql`)
-- Set up alert checker (see README.md)
+- The alert checker runs automatically as a background thread when you start the Flask server
+- Adjust alert check interval in `config.yaml` if needed
 
 ## Troubleshooting
 

@@ -22,14 +22,18 @@ Data_Monitoring_tool/
 │   │
 │   ├── templates/                     # Flask HTML templates
 │   │   ├── base.html                  # Base template with navigation
+│   │   ├── login.html                 # Login page
 │   │   ├── dashboard.html             # Main dashboard page
 │   │   ├── alerts.html                # Alerts listing page
-│   │   └── host_details.html          # Individual host details
+│   │   ├── host_details.html          # Individual host details
+│   │   └── add_host.html              # Add host page
 │   │
 │   ├── agent_config.json              # Agent configuration (per client)
 │   ├── agent_config.json.template     # Agent config template
 │   │
 │   ├── db_fixed.sql                   # Database schema
+│   ├── setup_database.py              # Database setup script
+│   ├── setup_user.py                  # User creation script
 │   │
 │   ├── setup_server.sh                # Server setup script (Linux/Mac)
 │   ├── setup_server.bat               # Server setup script (Windows)
@@ -40,7 +44,6 @@ Data_Monitoring_tool/
 │   │
 │   └── demo/                          # Demo and testing scripts
 │       ├── test_monitoring.py         # Test data generator
-│       ├── check_alerts.py            # Alert checker script
 │       ├── demo_alerts.py             # Alert demonstration
 │       ├── verify_demo.py             # Verification script
 │       ├── setup_test_hosts.sql       # Test host setup
@@ -58,12 +61,14 @@ Data_Monitoring_tool/
 
 | File | Purpose | Location |
 |------|---------|----------|
-| `app_new.py` | Flask API server - receives metrics, serves dashboard | `scripts/` |
+| `app_new.py` | Flask API server - receives metrics, serves dashboard, runs alert daemon | `scripts/` |
 | `agent.py` | Monitoring agent - collects and sends metrics | `scripts/` |
-| `config.yaml` | Server configuration (database, auth, Flask) | `scripts/` |
+| `config.yaml` | Server configuration (database, auth, Flask, alerts) | `scripts/` |
 | `agent_config.json` | Agent configuration (API URL, host key) | `scripts/` |
 | `db_fixed.sql` | Database schema | `scripts/` |
-| `templates/*.html` | Web dashboard templates | `scripts/templates/` |
+| `setup_database.py` | Automated database setup script | `scripts/` |
+| `setup_user.py` | User account creation script | `scripts/` |
+| `templates/*.html` | Web dashboard templates (includes login.html) | `scripts/templates/` |
 
 ### Setup & Documentation
 
@@ -71,8 +76,11 @@ Data_Monitoring_tool/
 |------|---------|
 | `README.md` | Comprehensive documentation |
 | `QUICKSTART.md` | Quick 5-minute setup guide |
+| `IMPLEMENTATION_SUMMARY.md` | Summary of recent implementation changes |
 | `setup_server.sh/.bat` | Automated server setup |
 | `setup_client.sh/.bat` | Automated client setup |
+| `setup_database.py` | Database initialization script |
+| `setup_user.py` | User account creation script |
 | `diagnostics.py` | System diagnostic tool |
 
 ### Demo & Testing
@@ -80,8 +88,9 @@ Data_Monitoring_tool/
 | File | Purpose | Location |
 |------|---------|----------|
 | `test_monitoring.py` | Simulates multiple hosts sending data | `scripts/demo/` |
-| `check_alerts.py` | Alert checking script | `scripts/demo/` |
 | `demo_alerts.py` | Demonstrates alert system | `scripts/demo/` |
+
+**Note**: Alert checking is now integrated into `app_new.py` as a background daemon thread and runs automatically when the Flask server starts.
 
 ## File Organization Principles
 
@@ -116,13 +125,15 @@ Data_Monitoring_tool/
 
 - **Templates**: Must be in `scripts/templates/` for Flask to find them
 - **Config Files**: Server uses `scripts/config.yaml`, agent uses `scripts/agent_config.json`
-- **Database**: Schema in `scripts/db_fixed.sql` must be run first
+- **Database**: Run `setup_database.py` to create all tables (recommended) or use `db_fixed.sql`
+- **User Accounts**: Run `setup_user.py` to create login accounts for the dashboard
+- **Alert System**: Runs automatically as a background thread in `app_new.py` (no separate script needed)
 - **Virtual Environment**: Recommended but optional (`.venv/` directory)
 
 ## Adding New Features
 
 - **New API endpoints**: Add to `app_new.py`
-- **New alert types**: Add functions to `scripts/demo/check_alerts.py`
-- **New dashboard pages**: Add templates to `scripts/templates/` and routes to `app_new.py`
+- **New alert types**: Add functions to `app_new.py` (alert checking is integrated into the main application)
+- **New dashboard pages**: Add templates to `scripts/templates/` and routes to `app_new.py` (protect with `@login_required`)
 - **New metrics**: Modify `agent.py` to collect, update `app_new.py` to store
 
