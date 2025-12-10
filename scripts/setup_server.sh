@@ -75,6 +75,19 @@ except Exception as e:
     print('Please check your config.yaml settings')
 "
 
+# Offer to set up database
+echo ""
+echo "=========================================="
+echo "Database Setup"
+echo "=========================================="
+echo ""
+read -p "Do you want to set up the database tables now? (y/n): " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo "Running database setup..."
+    python3 setup_database.py
+fi
+
 # Check templates
 if [ ! -d "templates" ]; then
     echo ""

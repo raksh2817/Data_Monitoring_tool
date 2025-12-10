@@ -67,13 +67,25 @@ if not exist "templates" (
 
 echo.
 echo ==========================================
+echo Database Setup
+echo ==========================================
+echo.
+set /p SETUP_DB="Do you want to set up the database tables now? (y/n): "
+if /i "%SETUP_DB%"=="y" (
+    echo Running database setup...
+    python setup_database.py
+)
+
+echo.
+echo ==========================================
 echo Setup Complete!
 echo ==========================================
 echo.
 echo Next steps:
 echo 1. Ensure config.yaml is configured correctly
-echo 2. Run database setup: mysql ^< db_fixed.sql
-echo 3. Start server: python app_new.py
+echo 2. Set up database tables: python setup_database.py
+echo 3. Create user account: python setup_user.py admin password
+echo 4. Start server: python app_new.py
 echo.
 
 pause

@@ -38,22 +38,38 @@ database:
 
 ### 3. Create Database Schema
 
-The `db_fixed.sql` file contains the **complete database setup** (tables, alert types, and a test host):
+**Option 1: Using Python Setup Script (Recommended)**
+```bash
+cd scripts
+python setup_database.py
+```
 
+This automatically creates all required tables, including the users table, and sets up default alert types.
+
+**Option 2: Using SQL Script**
 ```bash
 mysql -h your-mysql-host -u your-username -p your-database < scripts/db_fixed.sql
 ```
 
 This creates all tables, adds default alert types, and includes one test host (`test-host` with key `test-key-123`).
 
-### 4. Start Server
+### 4. Create Initial User Account
+
+```bash
+cd scripts
+python setup_user.py admin your_password
+```
+
+This creates your first login account for the dashboard.
+
+### 5. Start Server
 
 ```bash
 cd scripts
 python app_new.py
 ```
 
-Server will be available at `http://localhost:5000`
+Server will be available at `http://localhost:5005` (or the port configured in config.yaml)
 
 ## Client Setup (3 minutes)
 

@@ -1,15 +1,19 @@
 import json
 import os
 import secrets
-from datetime import datetime, timezone
+import threading
+import time
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Optional, Any
+from typing import Optional, Any, Dict, List, Tuple
+from functools import wraps
 
 import pymysql
 import yaml
-from flask import Flask, request, jsonify, redirect, url_for, flash
+from flask import Flask, request, jsonify, redirect, url_for, flash, session, render_template
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from werkzeug.exceptions import BadRequest
+from werkzeug.security import check_password_hash
 
 
 def load_config() -> tuple[dict, Path]:
@@ -81,7 +85,236 @@ DB_CFG = dict(
 AUTH_HEADER = config["auth"]["header"]
 AUTH_PREFIX = config["auth"]["prefix"]
 
-#USE PYTHON THREADING LIB , 1 THREAD , CALL CHECK ALERTS , 
+# ============================================================================
+# ALERT CHECK FUNCTIONS (integrated from check_alerts.py)
+# ============================================================================
+
+def check_host_online(conn, host_id: int, params: dict) -> Tuple[bool, str]:
+    """Check if host has reported recently"""
+    threshold_minutes = params.get('offline_threshold_minutes', 60)
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT MAX(collected_at) as last_seen, h.host_name
+            FROM incoming_data i
+            JOIN hosts h ON i.host_id = h.host_id
+            WHERE i.host_id = %s
+            GROUP BY h.host_name
+        """, (host_id,))
+        result = cur.fetchone()
+    if not result or not result['last_seen']:
+        return True, f"Host has never reported data"
+    last_seen = result['last_seen']
+    host_name = result['host_name']
+    threshold = datetime.now() - timedelta(minutes=threshold_minutes)
+    if last_seen < threshold:
+        minutes_ago = int((datetime.now() - last_seen).total_seconds() / 60)
+        return True, f"Host '{host_name}' offline for {minutes_ago} minutes (threshold: {threshold_minutes})"
+    return False, f"Host '{host_name}' is online"
+
+def check_disk_space(conn, host_id: int, params: dict) -> Tuple[bool, str]:
+    """Check if disk usage exceeds threshold"""
+    threshold_pct = params.get('threshold_pct', 90)
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT disk_pct, h.host_name
+            FROM incoming_data i
+            JOIN hosts h ON i.host_id = h.host_id
+            WHERE i.host_id = %s
+            ORDER BY i.collected_at DESC
+            LIMIT 1
+        """, (host_id,))
+        result = cur.fetchone()
+    if not result or result['disk_pct'] is None:
+        return False, "No disk data available"
+    disk_pct = float(result['disk_pct'])
+    host_name = result['host_name']
+    if disk_pct >= threshold_pct:
+        return True, f"Host '{host_name}' disk usage critical: {disk_pct}% (threshold: {threshold_pct}%)"
+    return False, f"Host '{host_name}' disk usage normal: {disk_pct}%"
+
+def check_memory_usage(conn, host_id: int, params: dict) -> Tuple[bool, str]:
+    """Check if memory usage exceeds threshold"""
+    threshold_pct = params.get('threshold_pct', 90)
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT mem_pct, h.host_name
+            FROM incoming_data i
+            JOIN hosts h ON i.host_id = h.host_id
+            WHERE i.host_id = %s
+            ORDER BY i.collected_at DESC
+            LIMIT 1
+        """, (host_id,))
+        result = cur.fetchone()
+    if not result or result['mem_pct'] is None:
+        return False, "No memory data available"
+    mem_pct = float(result['mem_pct'])
+    host_name = result['host_name']
+    if mem_pct >= threshold_pct:
+        return True, f"Host '{host_name}' memory usage critical: {mem_pct}% (threshold: {threshold_pct}%)"
+    return False, f"Host '{host_name}' memory usage normal: {mem_pct}%"
+
+def check_cpu_usage(conn, host_id: int, params: dict) -> Tuple[bool, str]:
+    """Check if CPU usage exceeds threshold"""
+    threshold_pct = params.get('threshold_pct', 90)
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT cpu_pct, h.host_name
+            FROM incoming_data i
+            JOIN hosts h ON i.host_id = h.host_id
+            WHERE i.host_id = %s
+            ORDER BY i.collected_at DESC
+            LIMIT 1
+        """, (host_id,))
+        result = cur.fetchone()
+    if not result or result['cpu_pct'] is None:
+        return False, "No CPU data available"
+    cpu_pct = float(result['cpu_pct'])
+    host_name = result['host_name']
+    if cpu_pct >= threshold_pct:
+        return True, f"Host '{host_name}' CPU usage critical: {cpu_pct}% (threshold: {threshold_pct}%)"
+    return False, f"Host '{host_name}' CPU usage normal: {cpu_pct}%"
+
+ALERT_FUNCTIONS = {
+    'check_host_online': check_host_online,
+    'check_disk_space': check_disk_space,
+    'check_memory_usage': check_memory_usage,
+    'check_cpu_usage': check_cpu_usage,
+}
+
+def get_active_hosts_for_alerts(conn) -> List[Dict]:
+    """Get all active hosts for alert checking"""
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT host_id, host_name, last_seen
+            FROM hosts
+            WHERE is_active = 1
+            ORDER BY host_id
+        """)
+        return cur.fetchall()
+
+def get_host_alert_checks(conn, host_id: int) -> List[Dict]:
+    """Get all enabled alert checks for a host"""
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT 
+                hac.association_id,
+                hac.check_id,
+                hac.params_json,
+                at.check_name,
+                at.check_key,
+                at.function_name,
+                at.params_json as default_params,
+                at.severity
+            FROM host_alert_checks hac
+            JOIN alert_types at ON hac.check_id = at.check_id
+            WHERE hac.host_id = %s AND hac.enabled = 1 AND at.enabled = 1
+        """, (host_id,))
+        return cur.fetchall()
+
+def get_last_alert_state(conn, host_id: int, check_id: int) -> Optional[str]:
+    """Get the most recent alert status for this host/check combination"""
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT status
+            FROM alerts
+            WHERE host_id = %s AND check_id = %s
+            ORDER BY triggered_at DESC
+            LIMIT 1
+        """, (host_id, check_id))
+        result = cur.fetchone()
+        return result['status'] if result else None
+
+def create_alert(conn, host_id: int, check_id: int, severity: str, message: str, data_id: Optional[int] = None):
+    """Create a new alert record"""
+    with conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO alerts (
+                host_id, check_id, data_id,
+                triggered_at, severity, message, status,
+                created_at
+            ) VALUES (
+                %s, %s, %s, NOW(), %s, %s, 'open', NOW()
+            )
+        """, (host_id, check_id, data_id, severity, message))
+        alert_id = cur.lastrowid
+    conn.commit()
+    return alert_id
+
+def resolve_alert(conn, host_id: int, check_id: int, message: str):
+    """Mark alert as resolved (condition cleared)"""
+    with conn.cursor() as cur:
+        cur.execute("""
+            UPDATE alerts
+            SET status = 'resolved', 
+                message = CONCAT(message, ' → RESOLVED: ', %s),
+                updated_at = NOW()
+            WHERE host_id = %s 
+              AND check_id = %s 
+              AND status = 'open'
+            ORDER BY triggered_at DESC
+            LIMIT 1
+        """, (message, host_id, check_id))
+    conn.commit()
+
+def check_alerts_for_host(conn, host: Dict) -> Dict:
+    """Check all alerts for a single host"""
+    host_id = host['host_id']
+    host_name = host['host_name']
+    results = {
+        'host_id': host_id,
+        'host_name': host_name,
+        'checks_run': 0,
+        'alerts_triggered': 0,
+        'alerts_resolved': 0,
+    }
+    checks = get_host_alert_checks(conn, host_id)
+    if not checks:
+        return results
+    for check in checks:
+        check_id = check['check_id']
+        check_name = check['check_name']
+        function_name = check['function_name']
+        severity = check['severity']
+        params = json.loads(check['default_params']) if check['default_params'] else {}
+        if check['params_json']:
+            host_params = json.loads(check['params_json'])
+            params.update(host_params)
+        if function_name not in ALERT_FUNCTIONS:
+            continue
+        check_function = ALERT_FUNCTIONS[function_name]
+        results['checks_run'] += 1
+        try:
+            alert_triggered, message = check_function(conn, host_id, params)
+            last_state = get_last_alert_state(conn, host_id, check_id)
+            if alert_triggered:
+                if last_state != 'open':
+                    create_alert(conn, host_id, check_id, severity, message)
+                    results['alerts_triggered'] += 1
+            else:
+                if last_state == 'open':
+                    resolve_alert(conn, host_id, check_id, message)
+                    results['alerts_resolved'] += 1
+        except Exception as e:
+            print(f"Error checking {check_name} for {host_name}: {e}")
+    return results
+
+def check_alerts_daemon(interval_seconds: int = 60):
+    """Daemon function to check alerts periodically"""
+    print(f"[Alert Daemon] Starting alert checker daemon (interval: {interval_seconds}s)")
+    while True:
+        try:
+            conn = db()
+            hosts = get_active_hosts_for_alerts(conn)
+            if hosts:
+                for host in hosts:
+                    try:
+                        check_alerts_for_host(conn, host)
+                    except Exception as e:
+                        print(f"[Alert Daemon] Error checking host {host['host_name']}: {e}")
+            conn.close()
+        except Exception as e:
+            print(f"[Alert Daemon] Error: {e}")
+        time.sleep(interval_seconds)
 
 # Flask initialization
 app = Flask(__name__)
@@ -89,6 +322,36 @@ app.secret_key = secrets.token_hex(16)  # For flash messages
 
 def db():
     return pymysql.connect(**DB_CFG)
+
+# ============================================================================
+# AUTHENTICATION HELPERS
+# ============================================================================
+
+def login_required(f):
+    """Decorator to require login for routes"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login', next=request.url))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def verify_user(username: str, password: str) -> Optional[int]:
+    """Verify user credentials and return user_id if valid"""
+    conn = db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT user_id, password_hash 
+                FROM users 
+                WHERE username = %s AND is_active = 1
+            """, (username,))
+            user = cur.fetchone()
+            if user and check_password_hash(user['password_hash'], password):
+                return user['user_id']
+        return None
+    finally:
+        conn.close()
 
 # Main entry point moved to bottom of file
 
@@ -253,11 +516,38 @@ def health():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
-from flask import render_template
-from datetime import datetime
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Login page"""
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        
+        if not username or not password:
+            return render_template('login.html', error='Username and password are required')
+        
+        user_id = verify_user(username, password)
+        if user_id:
+            session['user_id'] = user_id
+            session['username'] = username
+            next_page = request.args.get('next', url_for('dashboard'))
+            return redirect(next_page)
+        else:
+            return render_template('login.html', error='Invalid username or password')
+    
+    # GET request - show login form
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    """Logout and clear session"""
+    session.clear()
+    flash('You have been logged out', 'success')
+    return redirect(url_for('login'))
 
 @app.route('/')
 @app.route('/dashboard')
+@login_required
 def dashboard():
     conn = db()
     try:
@@ -294,6 +584,7 @@ def dashboard():
         return f"Error: {e}", 500
 
 @app.route('/alerts')
+@login_required
 def alerts_page():
     conn = db()
     try:
@@ -319,6 +610,7 @@ def alerts_page():
         return f"Error: {e}", 500
 
 @app.route('/host/<int:host_id>')
+@login_required
 def host_details(host_id):
     conn = db()
     try:
@@ -360,6 +652,7 @@ def host_details(host_id):
         return f"Error: {e}", 500
 
 @app.route('/add-host', methods=['GET', 'POST'])
+@login_required
 def add_host():
     """Add a new host to the monitoring system"""
     if request.method == 'GET':
@@ -506,6 +799,12 @@ if __name__ == '__main__':
         response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
         response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
         return response
+    
+    # Start alert checker daemon thread
+    alert_interval = int(config.get('alerts', {}).get('check_interval_seconds', 60))
+    alert_thread = threading.Thread(target=check_alerts_daemon, args=(alert_interval,), daemon=True)
+    alert_thread.start()
+    print(f"[Main] Started alert checker daemon thread (interval: {alert_interval}s)")
     
     try:
         app.run(
